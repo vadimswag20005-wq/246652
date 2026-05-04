@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Учёт оплаты обучения студентами</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- Модальное окно авторизации/регистрации -->
+    <div id="loginModal" class="modal show">
+        <div class="modal-content">
+            <h2 id="authTitle">🔐 Вход</h2>
+            <div class="reports-tabs" style="margin-bottom: 15px;">
+                <button type="button" id="authTabLogin" class="tab-btn active" onclick="switchAuthTab('login')">Вход</button>
+                <button type="button" id="authTabRegister" class="tab-btn" onclick="switchAuthTab('register')">Регистрация</button>
+            </div>
+            <form id="loginForm" onsubmit="login(event)" style="display: block;">
+                <div class="form-group">
+                    <label for="loginUsername">Логин или Email:</label>
+                    <input type="text" id="loginUsername" required>
+                </div>
+                <div class="form-group">
+                    <label for="loginPassword">Пароль:</label>
+                    <input type="password" id="loginPassword" required>
+                </div>
+                <p class="login-hint">Вход для студента, преподавателя, бухгалтера и директора. Роль и доступы задаются в базе данных.</p>
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary">Войти</button>
+                </div>
+            </form>
+            <form id="registerForm" onsubmit="registerUser(event)" style="display: none;">
+                <div class="form-group">
+                    <label for="registerFullName">ФИО:</label>
+                    <input type="text" id="registerFullName" required>
+                </div>
+                <div class="form-group">
+                    <label for="registerEmail">Email:</label>
+                    <input type="email" id="registerEmail" required>
+                </div>
+                <div class="form-group">
+                    <label for="registerPassword">Пароль:</label>
+                    <input type="password" id="registerPassword" minlength="6" required>
+                </div>
+                <div class="form-group">
+                    <label for="registerPasswordConfirm">Подтверждение пароля:</label>
+                    <input type="password" id="registerPasswordConfirm" minlength="6" required>
+                </div>
+                <p class="login-hint">После регистрации аккаунт активирует директор и назначит права доступа.</p>
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary">Зарегистрироваться</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="container" id="mainContainer" style="display: none;">
+        <header>
+            <div class="header-content">
+                <h1 id="mainTitle">🎓 Учёт оплаты обучения студентами</h1>
+                <div class="user-info">
+                    <span id="currentUserRole"></span>
+                    <button class="btn btn-secondary btn-sm" onclick="logout()">Выйти</button>
+                </div>
+            </div>
+        </header>
+
+        <div class="main-content">
+            <!-- Боковая панель -->
+            <aside class="sidebar">
+                <div class="stats-card">
+                    <h3>Статистика</h3>
+                    <div class="stat-item">
+                        <span class="stat-label">Всего студентов:</span>
+                        <span class="stat-value" id="totalStudents">0</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Оплачено:</span>
+                        <span class="stat-value success" id="paidAmount">0 ₽</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Задолженность:</span>
+                        <span class="stat-value danger" id="debtAmount">0 ₽</span>
+                    </div>
+                </div>
+            </aside>
+
+            <!-- Основной контент -->
+            <main class="content">
+                <!-- Панель управления -->
+                <div class="controls">
+                    <div class="controls-left">
+                        <button class="btn btn-primary" id="addStudentBtn" onclick="openAddStudentModal()" style="display: none;">
+                            ➕ Добавить студента
+                        </button>
+                        <button type="button" class="btn btn-info" id="reportsBtn" onclick="openReportsModal()">
+                            📊 Выборки и отчеты
+                        </button>
+                        <button type="button" class="btn btn-secondary" id="accessBtn" style="display:none;" onclick="openAccessModal()">
+                            👥 Доступ и преподаватели
+                        </button>
+                        <input type="text" id="searchInput" class="search-input" placeholder="🔍 Поиск студента..." oninput="filterStudents()">
+                    </div>
+                </div>
+
+                <!-- Список студентов -->
+                <div class="students-list" id="studentsList">
+                    <!-- Студенты будут добавлены динамически -->
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <!-- Модальное окно добавления/редактирования студента -->
+    <div id="studentModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeStudentModal()">&times;</span>
+            <h2 id="modalTitle">Добавить студента</h2>
+            <form id="studentForm" onsubmit="saveStudent(event)">
+                <div class="form-group">
+                    <label for="studentName">ФИО студента:</label>
+                    <input type="text" id="studentName" required>
+                </div>
+                <div class="form-group">
+                    <label for="studentSpecialty">Специальность:</label>
+                    <input type="text" id="studentSpecialty" required>
+                </div>
+                <div class="form-group">
+                    <label for="studentCourse">Курс:</label>
+                    <input type="number" id="studentCourse" min="1" max="6" required>
+                </div>
+                <div class="form-group">
+                    <label for="studentGroup">Группа:</label>
+                    <input type="text" id="studentGroup" required>
+                </div>
+                <div class="form-group">
+                    <label for="enrollmentOrder">Приказ зачисления (номер и дата):</label>
+                    <input type="text" id="enrollmentOrder" placeholder="Например: №123 от 01.09.2024" required>
+                </div>
+                <div class="form-group">
+                    <label for="studentPhone">Телефон:</label>
+                    <input type="tel" id="studentPhone">
+                </div>
+                <div class="form-group">
+                    <label for="studentEmail">Email:</label>
+                    <input type="email" id="studentEmail">
+                </div>
+                <div class="form-group">
+                    <label for="totalCost">Стоимость обучения (₽):</label>
+                    <input type="number" id="totalCost" min="0" step="0.01" required>
+                </div>
+                <div class="form-group">
+                    <label for="nextPaymentDate">Дата следующего платежа:</label>
+                    <input type="date" id="nextPaymentDate">
+                </div>
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary">Сохранить</button>
+                    <button type="button" class="btn btn-secondary" onclick="closeStudentModal()">Отмена</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Модальное окно платежей -->
+    <div id="paymentModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closePaymentModal()">&times;</span>
+            <h2>Платежи студента: <span id="paymentStudentName"></span></h2>
+            <div class="payment-info">
+                <p><strong>Стоимость обучения:</strong> <span id="paymentTotalCost">0</span> ₽</p>
+                <p><strong>Оплачено:</strong> <span id="paymentPaid">0</span> ₽</p>
+                <p><strong>Остаток:</strong> <span id="paymentRemaining">0</span> ₽</p>
+            </div>
+            <div id="paymentAddBlock">
+            <form id="paymentForm" onsubmit="addPayment(event)">
+                <div class="form-group">
+                    <label for="paymentAmount">Сумма платежа (₽):</label>
+                    <input type="number" id="paymentAmount" min="0" step="0.01" required>
+                </div>
+                <div class="form-group">
+                    <label for="paymentDate">Дата платежа:</label>
+                    <input type="date" id="paymentDate" required>
+                </div>
+                <div class="form-group">
+                    <label for="paymentSemester">За что оплачено:</label>
+                    <select id="paymentSemester">
+                        <option value="">Не указано</option>
+                        <option value="first">1 семестр</option>
+                        <option value="second">2 семестр</option>
+                        <option value="full">Весь период обучения</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="paymentCheckNumber">Номер чека:</label>
+                    <input type="text" id="paymentCheckNumber">
+                </div>
+                <div class="form-group">
+                    <label for="paymentCheckFile">Чек оплаты (файл):</label>
+                    <input type="file" id="paymentCheckFile" accept="image/*,.pdf">
+                </div>
+                <div class="form-group">
+                    <label for="paymentNote">Примечание:</label>
+                    <textarea id="paymentNote" rows="3"></textarea>
+                </div>
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary">Добавить платеж</button>
+                    <button type="button" class="btn btn-secondary" onclick="closePaymentModal()">Закрыть</button>
+                </div>
+            </form>
+            </div>
+            <div class="payments-history">
+                <h3>История платежей</h3>
+                <div id="paymentsList"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Модальное окно карточки студента -->
+    <div id="studentCardModal" class="modal">
+        <div class="modal-content modal-large">
+            <span class="close" onclick="closeStudentCardModal()">&times;</span>
+            <h2 id="studentCardTitle">Карточка студента</h2>
+            <div id="studentCardContent"></div>
+            <div class="form-actions">
+                <button class="btn btn-primary" onclick="printStudentCard()">🖨️ Печать карточки</button>
+                <button type="button" class="btn btn-secondary" onclick="closeStudentCardModal()">Закрыть</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Модальное окно выборок и отчетов -->
+    <div id="reportsModal" class="modal">
+        <div class="modal-content modal-large">
+            <span class="close" onclick="closeReportsModal()">&times;</span>
+            <h2>📊 Выборки и отчеты</h2>
+            <div class="reports-tabs">
+                <button class="tab-btn active" onclick="showReportTab('debtors', this)">Должники по специальностям</button>
+                <button class="tab-btn" onclick="showReportTab('amounts', this)">1 и 2 семестр / весь период</button>
+                <button class="tab-btn" onclick="showReportTab('prepaid', this)">Предоплата</button>
+            </div>
+            <div id="reportsContent">
+                <div id="debtorsReport" class="report-tab active">
+                    <h3>Должники по специальностям</h3>
+                    <div id="debtorsList"></div>
+                    <button class="btn btn-primary" onclick="printReport('debtors')">🖨️ Печать отчета</button>
+                </div>
+                <div id="amountsReport" class="report-tab" style="display: none;">
+                    <h3>1 семестр / 2 семестр / весь период обучения</h3>
+                    <div id="amountsList"></div>
+                    <button class="btn btn-primary" onclick="printReport('amounts')">🖨️ Печать отчета</button>
+                </div>
+                <div id="prepaidReport" class="report-tab" style="display: none;">
+                    <h3>Студенты с предоплатой</h3>
+                    <div id="prepaidList"></div>
+                    <button class="btn btn-primary" onclick="printReport('prepaid')">🖨️ Печать отчета</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Модальное окно управления доступом (директор) -->
+    <div id="accessModal" class="modal">
+        <div class="modal-content modal-large">
+            <span class="close" onclick="closeAccessModal()">&times;</span>
+            <h2>👥 Управление доступом и преподавателями</h2>
+            <div class="reports-tabs">
+                <button class="tab-btn active" onclick="showAccessTab('accounts', this)">Аккаунты и права</button>
+                <button class="tab-btn" onclick="showAccessTab('teachers', this)">Преподаватели и студенты</button>
+            </div>
+            <div id="accountsTab" class="report-tab" style="display:block;">
+                <h3>Новые аккаунты и назначение прав</h3>
+                <div id="accountsList"></div>
+            </div>
+            <div id="teachersTab" class="report-tab" style="display:none;">
+                <h3>Добавление преподавателя</h3>
+                <form id="createTeacherForm" onsubmit="createTeacher(event)">
+                    <div class="form-group"><label for="teacherFullName">ФИО</label><input id="teacherFullName" type="text" required></div>
+                    <div class="form-group"><label for="teacherEmail">Email</label><input id="teacherEmail" type="email" required></div>
+                    <div class="form-group"><label for="teacherPassword">Пароль</label><input id="teacherPassword" type="password" minlength="6" required></div>
+                    <div class="form-actions"><button class="btn btn-primary" type="submit">Добавить преподавателя</button></div>
+                </form>
+                <h3 style="margin-top:20px;">Закрепление студентов за преподавателями</h3>
+                <div id="teachersAssignments"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
