@@ -11,33 +11,6 @@ function sslFromDatabaseUrl(url) {
   return { rejectUnauthorized: false };
 }
 
-/**
- * Делит SQL на выражения по `;` вне блоков `$$ ... $$` (как в DO $$ и телах функций).
- */
-function splitStatements(sql) {
-  const statements = [];
-  let cur = '';
-  let inDollar = false;
-  for (let i = 0; i < sql.length; i++) {
-    if (sql[i] === '$' && sql[i + 1] === '$') {
-      inDollar = !inDollar;
-      cur += '$$';
-      i++;
-      continue;
-    }
-    if (sql[i] === ';' && !inDollar) {
-      const s = cur.trim();
-      if (s.length > 0 && !s.startsWith('--')) statements.push(s);
-      cur = '';
-      continue;
-    }
-    cur += sql[i];
-  }
-  const tail = cur.trim();
-  if (tail.length > 0 && !tail.startsWith('--')) statements.push(tail);
-  return statements;
-}
-
 async function ensureFirstDirector(client) {
   const { rows } = await client.query('SELECT COUNT(*)::int AS c FROM users');
   if (rows[0].c > 0) return;
@@ -78,7 +51,6 @@ async function main() {
 
   const schemaPath = path.join(__dirname, '..', 'db', 'schema.sql');
   const fileSql = fs.readFileSync(schemaPath, 'utf8');
-  const parts = splitStatements(fileSql);
 
   const client = new Client({
     connectionString: url,
@@ -86,11 +58,9 @@ async function main() {
   });
   await client.connect();
 
-  for (const stmt of parts) {
-    const s = stmt.trim();
-    if (!s) continue;
-    await client.query(s);
-  }
+  // Весь файл одним запросом: надёжнее, чем разбор по `;` (комментарии перед
+  // оператором давали ложное `startsWith('--')` и операторы терялись).
+  await client.query(fileSql);
 
   await ensureFirstDirector(client);
   await client.end();
