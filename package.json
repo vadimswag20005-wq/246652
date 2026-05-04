@@ -5,8 +5,9 @@
   "description": "Учёт оплаты обучения — Express + PostgreSQL",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
-    "seed": "node scripts/seed.js"
+    "start": "node scripts/apply-schema.js && node server.js",
+    "seed": "node scripts/seed.js",
+    "migrate": "node scripts/apply-schema.js"
   },
   "engines": {
     "node": ">=18"
