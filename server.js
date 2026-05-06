@@ -90,6 +90,10 @@ function rowToPayment(row) {
     amount: num(row.amount),
     date: formatDateOnly(row.payment_date),
     semester: row.semester || '',
+    studyYear:
+      row.study_year != null && row.study_year !== ''
+        ? Number(row.study_year)
+        : null,
     checkNumber: row.check_number || '',
     note: row.note || '',
     checkFile: row.check_file || null,
@@ -261,33 +265,98 @@ function buildDebtorsReport(students) {
   return { specialties };
 }
 
+function paidForCourseSemester(student, studyYear, semesterKey) {
+  if (!student.payments || !semesterKey) return 0;
+  return student.payments.reduce((sum, p) => {
+    if (num(p.studyYear) !== studyYear) return sum;
+    if (p.semester !== semesterKey) return sum;
+    return sum + num(p.amount);
+  }, 0);
+}
+
+/** 4 курса × 2 семестра: доля стоимости одного семестра */
+function semesterShareEight(total) {
+  const t = num(total);
+  return t > 0 ? t / 8 : 0;
+}
+
 function buildSemesterAmountsReport(students) {
-  const firstSemester = [];
-  const secondSemesterNotPaid = [];
   const fullPeriod = [];
+  const bySlot = [];
+
+  for (let course = 1; course <= 4; course++) {
+    for (const sem of ['first', 'second']) {
+      const paidList = [];
+      const debtList = [];
+      const semLabel = sem === 'first' ? 1 : 2;
+
+      for (const student of students) {
+        const total = num(student.totalCost);
+        const share = semesterShareEight(total);
+        const paidTotal = student.payments.reduce((s, p) => s + num(p.amount), 0);
+        const paidFull = total > 0 && paidTotal >= total;
+        const slotPaid = paidForCourseSemester(student, course, sem);
+        const specialty =
+          student.specialty && student.specialty.trim()
+            ? student.specialty
+            : 'Без специальности';
+
+        if (total <= 0 || share <= 0) continue;
+
+        if (paidFull || slotPaid >= share) {
+          paidList.push({
+            name: student.name,
+            specialty,
+            slotPaid: paidFull ? total : slotPaid,
+            total,
+            norm: share,
+          });
+        } else if (slotPaid > 0) {
+          debtList.push({
+            name: student.name,
+            specialty,
+            slotPaid,
+            debtSlot: Math.max(0, share - slotPaid),
+            total,
+          });
+        } else {
+          debtList.push({
+            name: student.name,
+            specialty,
+            slotPaid: 0,
+            debtSlot: share,
+            total,
+          });
+        }
+      }
+
+      paidList.sort((a, b) => a.specialty.localeCompare(b.specialty, 'ru'));
+      debtList.sort((a, b) => b.debtSlot - a.debtSlot);
+
+      bySlot.push({
+        course,
+        semester: semLabel,
+        semesterKey: sem,
+        paidList,
+        debtList,
+      });
+    }
+  }
 
   for (const student of students) {
     const paid = student.payments.reduce((sum, p) => sum + num(p.amount), 0);
     const total = num(student.totalCost);
-    const semesterCost = total / 2;
-    const specialty = student.specialty && student.specialty.trim() ? student.specialty : 'Без специальности';
-
-    if (total > 0 && semesterCost > 0) {
-      const paidFirstSemester = paid >= semesterCost;
-      const paidFull = paid >= total;
-      const debt = Math.max(0, total - paid);
-
-      if (paidFirstSemester) firstSemester.push({ name: student.name, specialty, paidFirst: Math.min(paid, semesterCost), total });
-      if (paidFirstSemester && !paidFull) secondSemesterNotPaid.push({ name: student.name, specialty, debtSecond: debt });
-      if (paidFull) fullPeriod.push({ name: student.name, specialty, total, paid });
+    const specialty =
+      student.specialty && student.specialty.trim()
+        ? student.specialty
+        : 'Без специальности';
+    if (total > 0 && paid >= total) {
+      fullPeriod.push({ name: student.name, specialty, total, paid });
     }
   }
-
-  firstSemester.sort((a, b) => a.specialty.localeCompare(b.specialty, 'ru'));
-  secondSemesterNotPaid.sort((a, b) => b.debtSecond - a.debtSecond);
   fullPeriod.sort((a, b) => a.specialty.localeCompare(b.specialty, 'ru'));
 
-  return { firstSemester, secondSemesterNotPaid, fullPeriod };
+  return { bySlot, fullPeriod };
 }
 
 function buildPrepaidReport(students) {
@@ -588,14 +657,36 @@ app.post('/api/students/:id/payments', requireAuth, requirePermission('addPaymen
     if (amount < 0) return res.status(400).json({ error: 'Сумма не может быть отрицательной' });
 
     const semester = normalizeSemester(req.body?.semester);
+    const syRaw = parseInt(req.body?.studyYear, 10);
+    let studyYear =
+      Number.isFinite(syRaw) && syRaw >= 1 && syRaw <= 4 ? syRaw : null;
+    if (!semester || semester === 'full') {
+      studyYear = null;
+    } else if (semester === 'first' || semester === 'second') {
+      if (studyYear == null) {
+        return res.status(400).json({
+          error: 'Укажите курс обучения (от 1 до 4) для оплаты за семестр',
+        });
+      }
+    }
+
     const checkNumber = String(req.body?.checkNumber || '').trim();
     const note = String(req.body?.note || '').trim();
     const checkFile = req.body?.checkFile ? String(req.body.checkFile) : null;
 
     const { rows } = await pool.query(
-      `INSERT INTO payments (student_id, amount, payment_date, semester, check_number, note, check_file)
-       VALUES ($1,$2,$3,$4::payment_semester,$5,$6,$7) RETURNING *`,
-      [req.params.id, amount, dateRaw, semester, checkNumber, note, checkFile]
+      `INSERT INTO payments (student_id, amount, payment_date, semester, study_year, check_number, note, check_file)
+       VALUES ($1,$2,$3,$4::payment_semester,$5,$6,$7,$8) RETURNING *`,
+      [
+        req.params.id,
+        amount,
+        dateRaw,
+        semester,
+        studyYear,
+        checkNumber,
+        note,
+        checkFile,
+      ]
     );
     res.status(201).json(rowToPayment(rows[0]));
   } catch (e) {

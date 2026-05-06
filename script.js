@@ -291,6 +291,7 @@ async function loadStudents() {
         student.payments = student.payments.map((p) => ({
             ...p,
             amount: parseFloat(p.amount),
+            studyYear: p.studyYear != null ? Number(p.studyYear) : null,
         }));
         return student;
     });
@@ -410,7 +411,9 @@ function openPaymentModal(id) {
     
     document.getElementById('paymentForm').reset();
     document.getElementById('paymentDate').valueAsDate = new Date();
-    
+    const syEl = document.getElementById('paymentStudyYear');
+    if (syEl) syEl.value = '';
+
     renderPaymentsList(student);
     syncPaymentFormVisibility();
     document.getElementById('paymentModal').classList.add('show');
@@ -448,6 +451,13 @@ async function addPayment(event) {
     
     const sid = currentStudentId;
     const semesterVal = document.getElementById('paymentSemester').value;
+    const studyYearEl = document.getElementById('paymentStudyYear');
+    const studyYearVal = studyYearEl ? studyYearEl.value : '';
+
+    if ((semesterVal === 'first' || semesterVal === 'second') && !studyYearVal) {
+        alert('Выберите курс обучения (от 1 до 4) для оплаты за семестр.');
+        return;
+    }
 
     try {
         await apiFetch(`/api/students/${sid}/payments`, {
@@ -456,6 +466,10 @@ async function addPayment(event) {
                 amount: parseFloat(document.getElementById('paymentAmount').value),
                 date: document.getElementById('paymentDate').value,
                 semester: semesterVal || null,
+                studyYear:
+                    semesterVal === 'first' || semesterVal === 'second'
+                        ? parseInt(studyYearVal, 10)
+                        : null,
                 checkNumber: document.getElementById('paymentCheckNumber').value.trim(),
                 checkFile: checkFileBase64,
                 note: document.getElementById('paymentNote').value.trim(),
@@ -501,6 +515,37 @@ function calculatePaidAmount(student) {
         return 0;
     }
     return student.payments.reduce((sum, payment) => sum + payment.amount, 0);
+}
+
+function paymentPeriodLabel(payment) {
+    if (!payment) return '';
+    if (payment.semester === 'full') return 'Весь период обучения';
+    if (payment.semester === 'first' || payment.semester === 'second') {
+        const y =
+            payment.studyYear != null && payment.studyYear !== ''
+                ? String(payment.studyYear)
+                : '—';
+        const semNum = payment.semester === 'first' ? '1' : '2';
+        return `${y} курс, ${semNum}-й семестр`;
+    }
+    if (payment.studyYear != null && payment.studyYear !== '') {
+        return `Курс ${payment.studyYear} (семестр не указан)`;
+    }
+    return 'Не указано';
+}
+
+function paidForCourseSemester(student, studyYear, semesterKey) {
+    if (!student.payments || !semesterKey) return 0;
+    return student.payments.reduce((sum, p) => {
+        if (Number(p.studyYear) !== Number(studyYear)) return sum;
+        if (p.semester !== semesterKey) return sum;
+        return sum + (Number(p.amount) || 0);
+    }, 0);
+}
+
+function semesterShareEight(total) {
+    const t = Number(total);
+    return t > 0 ? t / 8 : 0;
 }
 
 // Получение статуса оплаты
@@ -715,11 +760,8 @@ function renderPaymentsListForCard(student) {
             day: 'numeric'
         });
 
-        let semesterText = '';
-        if (payment.semester === 'first') semesterText = '1 семестр';
-        else if (payment.semester === 'second') semesterText = '2 семестр';
-        else if (payment.semester === 'full') semesterText = 'Весь период обучения';
-        
+        const periodText = paymentPeriodLabel(payment);
+
         let checkHtml = '';
         if (payment.checkFile) {
             checkHtml = `
@@ -729,13 +771,13 @@ function renderPaymentsListForCard(student) {
                 </div>
             `;
         }
-        
+
         return `
             <div class="payment-item-card">
                 <div class="payment-item-info">
                     <div class="payment-item-amount">${payment.amount.toLocaleString('ru-RU')} ₽</div>
                     <div class="payment-item-date">📅 ${formattedDate}</div>
-                    ${semesterText ? `<div>За что оплачено: ${semesterText}</div>` : ''}
+                    ${periodText ? `<div>За что оплачено: ${escapeHtml(periodText)}</div>` : ''}
                     ${payment.checkNumber ? `<div>Номер чека: ${escapeHtml(payment.checkNumber)}</div>` : ''}
                     ${payment.note ? `<div class="payment-item-note">${escapeHtml(payment.note)}</div>` : ''}
                     ${checkHtml}
@@ -800,14 +842,11 @@ function printStudentCard() {
                     <tr><th>Дата</th><th>Сумма</th><th>За что оплачено</th><th>Номер чека</th><th>Примечание</th></tr>
                     ${student.payments && student.payments.length > 0 ? student.payments.map(p => {
                         const date = new Date(p.date);
-                        let semesterText = '';
-                        if (p.semester === 'first') semesterText = '1 семестр';
-                        else if (p.semester === 'second') semesterText = '2 семестр';
-                        else if (p.semester === 'full') semesterText = 'Весь период обучения';
+                        const semesterText = paymentPeriodLabel(p);
                         return `<tr>
                             <td>${date.toLocaleDateString('ru-RU')}</td>
                             <td>${p.amount.toLocaleString('ru-RU')} ₽</td>
-                            <td>${semesterText || '-'}</td>
+                            <td>${escapeHtml(semesterText) || '-'}</td>
                             <td>${p.checkNumber || '-'}</td>
                             <td>${p.note || '-'}</td>
                         </tr>`;
@@ -863,11 +902,8 @@ function renderPaymentsList(student) {
             day: 'numeric'
         });
 
-        let semesterText = '';
-        if (payment.semester === 'first') semesterText = '1 семестр';
-        else if (payment.semester === 'second') semesterText = '2 семестр';
-        else if (payment.semester === 'full') semesterText = 'Весь период обучения';
-        
+        const periodText = paymentPeriodLabel(payment);
+
         let checkHtml = '';
         if (payment.checkFile) {
             checkHtml = `
@@ -877,13 +913,13 @@ function renderPaymentsList(student) {
                 </div>
             `;
         }
-        
+
         return `
             <div class="payment-item">
                 <div class="payment-item-info">
                     <div class="payment-item-amount">${payment.amount.toLocaleString('ru-RU')} ₽</div>
                     <div class="payment-item-date">📅 ${formattedDate}</div>
-                    ${semesterText ? `<div>За что оплачено: ${semesterText}</div>` : ''}
+                    ${periodText ? `<div>За что оплачено: ${escapeHtml(periodText)}</div>` : ''}
                     ${payment.checkNumber ? `<div>Номер чека: ${escapeHtml(payment.checkNumber)}</div>` : ''}
                     ${payment.note ? `<div class="payment-item-note">${escapeHtml(payment.note)}</div>` : ''}
                     ${checkHtml}
@@ -1015,99 +1051,127 @@ function renderDebtorsReport() {
     container.innerHTML = html;
 }
 
-// Рендеринг отчета по суммам
+// Рендеринг отчета по суммам (4 курса × 2 семестра + полная оплата)
 function renderAmountsReport() {
     const container = document.getElementById('amountsList');
     if (!container) return;
-    
-    const firstSemester = [];
-    const secondSemesterNotPaid = [];
+
+    let html = '';
+
+    for (let course = 1; course <= 4; course++) {
+        for (const sem of ['first', 'second']) {
+            const semLabel = sem === 'first' ? 1 : 2;
+            const semKey = sem;
+            const paidList = [];
+            const debtList = [];
+
+            students.forEach((student) => {
+                const total = Number(student.totalCost);
+                const share = semesterShareEight(total);
+                const paidTotal = calculatePaidAmount(student);
+                const paidFull = total > 0 && paidTotal >= total;
+                const slotPaid = paidForCourseSemester(student, course, semKey);
+                const specialty =
+                    student.specialty && student.specialty.trim() !== ''
+                        ? student.specialty
+                        : 'Без специальности';
+
+                if (total <= 0 || share <= 0) return;
+
+                if (paidFull || slotPaid >= share) {
+                    paidList.push({
+                        name: student.name,
+                        specialty,
+                        slotPaid: paidFull ? total : slotPaid,
+                        total,
+                        norm: share,
+                    });
+                } else if (slotPaid > 0) {
+                    debtList.push({
+                        name: student.name,
+                        specialty,
+                        slotPaid,
+                        debtSlot: Math.max(0, share - slotPaid),
+                        total,
+                    });
+                } else {
+                    debtList.push({
+                        name: student.name,
+                        specialty,
+                        slotPaid: 0,
+                        debtSlot: share,
+                        total,
+                    });
+                }
+            });
+
+            paidList.sort((a, b) => a.specialty.localeCompare(b.specialty, 'ru'));
+            debtList.sort((a, b) => b.debtSlot - a.debtSlot);
+
+            html += `<div class="report-section"><h4>${course} курс, ${semLabel}-й семестр</h4>`;
+            html += `<p class="login-hint">Норма за семестр (1/8 полной стоимости) применяется индивидуально к каждому студенту.</p>`;
+
+            html += '<h5 style="margin-top:12px;color:#667eea;">Оплатили семестр</h5>';
+            if (paidList.length === 0) {
+                html += '<p>Нет студентов с полной оплатой этого семестра (по отмеченным платежам или полной оплате обучения).</p>';
+            } else {
+                html +=
+                    '<table class="report-table"><tr><th>Студент</th><th>Специальность</th><th>По семестру (факт)</th><th>Норма за семестр</th><th>Вся программа</th></tr>';
+                paidList.forEach((s) => {
+                    html += `<tr>
+                        <td>${escapeHtml(s.name)}</td>
+                        <td>${escapeHtml(s.specialty)}</td>
+                        <td>${s.slotPaid.toLocaleString('ru-RU')} ₽</td>
+                        <td>${s.norm.toLocaleString('ru-RU')} ₽</td>
+                        <td>${s.total.toLocaleString('ru-RU')} ₽</td>
+                    </tr>`;
+                });
+                html += '</table>';
+            }
+
+            html += '<h5 style="margin-top:16px;color:#667eea;">Недоплата / не оплачен</h5>';
+            if (debtList.length === 0) {
+                html += '<p>Все студенты с ненулевой стоимостью закрыли этот семестр.</p>';
+            } else {
+                html +=
+                    '<table class="report-table"><tr><th>Студент</th><th>Специальность</th><th>Внесено за семестр</th><th>Недоплата</th><th>Вся программа</th></tr>';
+                debtList.forEach((s) => {
+                    html += `<tr>
+                        <td>${escapeHtml(s.name)}</td>
+                        <td>${escapeHtml(s.specialty)}</td>
+                        <td>${s.slotPaid.toLocaleString('ru-RU')} ₽</td>
+                        <td>${s.debtSlot.toLocaleString('ru-RU')} ₽</td>
+                        <td>${s.total.toLocaleString('ru-RU')} ₽</td>
+                    </tr>`;
+                });
+                html += '</table>';
+            }
+
+            html += '</div>';
+        }
+    }
+
     const fullPeriod = [];
-    
-    students.forEach(student => {
+    students.forEach((student) => {
         const paid = calculatePaidAmount(student);
-        const total = student.totalCost;
-        const semesterCost = total / 2;
-        const specialty = student.specialty && student.specialty.trim() !== '' ? student.specialty : 'Без специальности';
-        
-        if (total > 0 && semesterCost > 0) {
-            const paidFirstSemester = paid >= semesterCost;
-            const paidFull = paid >= total;
-            const debt = Math.max(0, total - paid);
-
-            if (paidFirstSemester) {
-                firstSemester.push({
-                    name: student.name,
-                    specialty,
-                    paidFirst: Math.min(paid, semesterCost),
-                    total
-                });
-            }
-
-            if (paidFirstSemester && !paidFull) {
-                secondSemesterNotPaid.push({
-                    name: student.name,
-                    specialty,
-                    debtSecond: debt
-                });
-            }
-
-            if (paidFull) {
-                fullPeriod.push({
-                    name: student.name,
-                    specialty,
-                    total,
-                    paid
-                });
-            }
+        const total = Number(student.totalCost);
+        const specialty =
+            student.specialty && student.specialty.trim() !== ''
+                ? student.specialty
+                : 'Без специальности';
+        if (total > 0 && paid >= total) {
+            fullPeriod.push({ name: student.name, specialty, total, paid });
         }
     });
-    
-    // Сортировки для удобства просмотра
-    firstSemester.sort((a, b) => a.specialty.localeCompare(b.specialty, 'ru'));
-    secondSemesterNotPaid.sort((a, b) => b.debtSecond - a.debtSecond);
     fullPeriod.sort((a, b) => a.specialty.localeCompare(b.specialty, 'ru'));
-    
-    let html = '<div class="report-section"><h4>Студенты, оплатившие 1 семестр</h4>';
-    if (firstSemester.length === 0) {
-        html += '<p>Нет студентов, оплативших 1 семестр</p>';
-    } else {
-        html += '<table class="report-table"><tr><th>Студент</th><th>Специальность</th><th>Сумма оплаты (не меньше стоимости 1 семестра)</th><th>Полная стоимость</th></tr>';
-        firstSemester.forEach(s => {
-            const semesterCost = s.total / 2;
-            html += `<tr>
-                <td>${escapeHtml(s.name)}</td>
-                <td>${escapeHtml(s.specialty)}</td>
-                <td>${semesterCost.toLocaleString('ru-RU')} ₽</td>
-                <td>${s.total.toLocaleString('ru-RU')} ₽</td>
-            </tr>`;
-        });
-        html += '</table>';
-    }
-    html += '</div>';
-    
-    html += '<div class="report-section"><h4>Оплачен 1 семестр, не оплачен 2 семестр</h4>';
-    if (secondSemesterNotPaid.length === 0) {
-        html += '<p>Нет студентов с неоплаченным 2 семестром (при оплаченном 1 семестре)</p>';
-    } else {
-        html += '<table class="report-table"><tr><th>Студент</th><th>Специальность</th><th>Задолженность за 2 семестр</th></tr>';
-        secondSemesterNotPaid.forEach(s => {
-            html += `<tr>
-                <td>${escapeHtml(s.name)}</td>
-                <td>${escapeHtml(s.specialty)}</td>
-                <td>${s.debtSecond.toLocaleString('ru-RU')} ₽</td>
-            </tr>`;
-        });
-        html += '</table>';
-    }
-    html += '</div>';
 
     html += '<div class="report-section"><h4>Студенты, оплатившие весь период обучения</h4>';
     if (fullPeriod.length === 0) {
         html += '<p>Нет студентов, оплативших весь период обучения</p>';
     } else {
-        html += '<table class="report-table"><tr><th>Студент</th><th>Специальность</th><th>Стоимость обучения</th><th>Оплачено</th></tr>';
-        fullPeriod.forEach(s => {
+        html +=
+            '<table class="report-table"><tr><th>Студент</th><th>Специальность</th><th>Стоимость обучения</th><th>Оплачено</th></tr>';
+        fullPeriod.forEach((s) => {
             html += `<tr>
                 <td>${escapeHtml(s.name)}</td>
                 <td>${escapeHtml(s.specialty)}</td>
@@ -1118,7 +1182,7 @@ function renderAmountsReport() {
         html += '</table>';
     }
     html += '</div>';
-    
+
     container.innerHTML = html;
 }
 
@@ -1176,7 +1240,7 @@ function printReport(reportType) {
             content = document.getElementById('debtorsList').innerHTML;
             break;
         case 'amounts':
-            title = 'Отчет: 1 и 2 семестр / весь период обучения';
+            title = 'Отчет: курсы 1–4 и семестры / весь период обучения';
             content = document.getElementById('amountsList').innerHTML;
             break;
         case 'prepaid':

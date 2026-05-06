@@ -182,11 +182,22 @@
                     <input type="date" id="paymentDate" required>
                 </div>
                 <div class="form-group">
+                    <label for="paymentStudyYear">Курс обучения (для оплаты за семестр):</label>
+                    <select id="paymentStudyYear">
+                        <option value="">—</option>
+                        <option value="1">1 курс</option>
+                        <option value="2">2 курс</option>
+                        <option value="3">3 курс</option>
+                        <option value="4">4 курс</option>
+                    </select>
+                    <p class="login-hint" style="margin-top:6px;">Обязательно при выборе «1 семестр» или «2 семестр». Стоимость одного семестра в отчётах: полная стоимость обучения ÷ 8.</p>
+                </div>
+                <div class="form-group">
                     <label for="paymentSemester">За что оплачено:</label>
                     <select id="paymentSemester">
                         <option value="">Не указано</option>
-                        <option value="first">1 семестр</option>
-                        <option value="second">2 семестр</option>
+                        <option value="first">1-й семестр выбранного курса</option>
+                        <option value="second">2-й семестр выбранного курса</option>
                         <option value="full">Весь период обучения</option>
                     </select>
                 </div>
@@ -235,7 +246,7 @@
             <h2>📊 Выборки и отчеты</h2>
             <div class="reports-tabs">
                 <button class="tab-btn active" onclick="showReportTab('debtors', this)">Должники по специальностям</button>
-                <button class="tab-btn" onclick="showReportTab('amounts', this)">1 и 2 семестр / весь период</button>
+                <button class="tab-btn" onclick="showReportTab('amounts', this)">Курсы 1–4 и семестры</button>
                 <button class="tab-btn" onclick="showReportTab('prepaid', this)">Предоплата</button>
             </div>
             <div id="reportsContent">
@@ -245,7 +256,8 @@
                     <button class="btn btn-primary" onclick="printReport('debtors')">🖨️ Печать отчета</button>
                 </div>
                 <div id="amountsReport" class="report-tab" style="display: none;">
-                    <h3>1 семестр / 2 семестр / весь период обучения</h3>
+                    <h3>Оплата по курсам (1–4) и семестрам (1–2)</h3>
+                    <p class="login-hint">Норма за семестр: полная стоимость обучения студента ÷ 8. В выборки попадают платежи с указанным курсом и семестром; единый платеж «за весь период» учитывается как полная оплата всех семестров.</p>
                     <div id="amountsList"></div>
                     <button class="btn btn-primary" onclick="printReport('amounts')">🖨️ Печать отчета</button>
                 </div>

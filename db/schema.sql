@@ -65,11 +65,14 @@ CREATE TABLE IF NOT EXISTS payments (
     amount NUMERIC(14, 2) NOT NULL CHECK (amount >= 0),
     payment_date DATE NOT NULL,
     semester payment_semester,
+    study_year INT CHECK (study_year IS NULL OR (study_year >= 1 AND study_year <= 4)),
     check_number VARCHAR(200) NOT NULL DEFAULT '',
     note TEXT NOT NULL DEFAULT '',
     check_file TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+ALTER TABLE payments ADD COLUMN IF NOT EXISTS study_year INT;
 
 CREATE INDEX IF NOT EXISTS idx_payments_student_id ON payments (student_id);
 CREATE INDEX IF NOT EXISTS idx_payments_payment_date ON payments (payment_date);
